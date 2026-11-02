@@ -2,7 +2,7 @@
 # Install fb-build on this Mac: write the command into ~/.local/bin and
 # check the tools it needs. The tool is embedded at the end of this file, so
 # this file is all a dev needs; run a newer copy of it to update.
-#   ./install-fb-build.sh [bin_dir]
+#   ./fb-build-installer.sh [bin_dir]
 #
 # Do not edit below the marker line: scripts/build-installer.sh regenerates it
 # from bin/fb-build.
