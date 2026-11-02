@@ -1,16 +1,16 @@
 #!/bin/bash
-# Install ios-firebase on this Mac: write the command into ~/.local/bin and
+# Install fb-build on this Mac: write the command into ~/.local/bin and
 # check the tools it needs. The tool is embedded at the end of this file, so
 # this file is all a dev needs; run a newer copy of it to update.
-#   ./install-ios-firebase.sh [bin_dir]
+#   ./install-fb-build.sh [bin_dir]
 #
 # Do not edit below the marker line: scripts/build-installer.sh regenerates it
-# from bin/ios-firebase.
+# from bin/fb-build.
 set -euo pipefail
 
-MARKER=__IOS_FIREBASE_TOOL__
+MARKER=__FB_BUILD_TOOL__
 BIN_DIR="${1:-$HOME/.local/bin}"
-TARGET="$BIN_DIR/ios-firebase"
+TARGET="$BIN_DIR/fb-build"
 
 if [[ -t 1 ]]; then
   C_RED=$'\033[31m' C_YEL=$'\033[33m' C_GRN=$'\033[32m' C_BLU=$'\033[34m' C_DIM=$'\033[2m' C_B=$'\033[1m' C_0=$'\033[0m'
@@ -25,23 +25,21 @@ die()  { bad "$*"; exit 1; }
 
 tool_body() { sed -n "/^$MARKER\$/,\$p" "${BASH_SOURCE[0]}" | tail -n +2; }
 VERSION="$(tool_body | sed -n 's/^TOOL_VERSION=//p' | head -1)"
-COMMIT="$(tool_body | sed -n 's/^TOOL_COMMIT=//p' | head -1)"
-VERSION="$VERSION${COMMIT:+ ($COMMIT)}"
 [[ -n "$VERSION" ]] || die "File cài đặt bị lỗi: không có tool đi kèm. Tải lại file cài đặt."
 
 echo
-echo "${C_BLU}==>${C_0} ${C_B}Cài đặt ios-firebase $VERSION${C_0}"
+echo "${C_BLU}==>${C_0} ${C_B}Cài đặt fb-build $VERSION${C_0}"
 echo
 
 previous=
-[[ ! -x "$TARGET" ]] || previous="$("$TARGET" --version 2>/dev/null | sed 's/^ios-firebase //' || true)"
+[[ ! -x "$TARGET" ]] || previous="$("$TARGET" --version 2>/dev/null | sed 's/^fb-build //' || true)"
 mkdir -p "$BIN_DIR" 2>/dev/null || die "Không tạo được thư mục $BIN_DIR"
 tool_body > "$TARGET.tmp" && chmod +x "$TARGET.tmp" && mv -f "$TARGET.tmp" "$TARGET" \
   || die "Không ghi được $TARGET"
 if [[ -n "$previous" && "$previous" != "$VERSION" ]]; then
-  ok "ios-firebase: cập nhật $previous → $VERSION"
+  ok "fb-build: cập nhật $previous → $VERSION"
 else
-  ok "ios-firebase $VERSION"
+  ok "fb-build $VERSION"
 fi
 
 warnings=0
@@ -59,7 +57,7 @@ if [[ -z "$xcodes" ]]; then
   bad "Chưa cài Xcode. Cài Xcode từ App Store rồi chạy lại file cài đặt."
   warnings=$((warnings + 1))
 elif [[ "$xcodes" == *", "* ]]; then
-  ok "Xcode $xcodes ${C_DIM}· chọn bản để build bằng --xcode <version>${C_0}"
+  ok "Xcode $xcodes ${C_DIM}· chọn bản để build bằng fb-build init --xcode <version>${C_0}"
 else
   ok "Xcode $xcodes"
 fi
@@ -67,7 +65,7 @@ fi
 if ! command -v firebase >/dev/null 2>&1 && command -v brew >/dev/null 2>&1 && [[ -t 0 ]]; then
   read -r -p "  ${C_YEL}?${C_0} Chưa có Firebase CLI. Cài bằng Homebrew? [Y/n] " answer
   if [[ ! "$answer" =~ ^[Nn] ]]; then
-    log="$(mktemp -t ios-firebase-brew)"
+    log="$(mktemp -t fb-build-brew)"
     printf '    %s' "${C_DIM}Đang cài Firebase CLI…${C_0}"
     if brew install firebase-cli > "$log" 2>&1; then
       printf '\r\033[K'
@@ -95,42 +93,46 @@ fi
 
 echo
 if (( warnings == 0 )); then
-  echo "${C_GRN}${C_B}Cài đặt xong.${C_0} Trong thư mục repo app, chạy ${C_B}ios-firebase init${C_0} để bắt đầu."
+  echo "${C_GRN}${C_B}Cài đặt xong.${C_0} Trong thư mục repo app, chạy ${C_B}fb-build init${C_0} để bắt đầu."
 else
-  echo "${C_YEL}${C_B}Đã cài ios-firebase.${C_0} Xử lý $warnings mục ở trên rồi chạy ${C_B}ios-firebase init${C_0} trong repo app."
+  echo "${C_YEL}${C_B}Đã cài fb-build.${C_0} Xử lý $warnings mục ở trên rồi chạy ${C_B}fb-build init${C_0} trong repo app."
 fi
 command -v xcbeautify >/dev/null 2>&1 \
   || echo "${C_DIM}Mẹo: brew install xcbeautify để log build dễ đọc hơn.${C_0}"
 exit 0
-__IOS_FIREBASE_TOOL__
+__FB_BUILD_TOOL__
 #!/bin/bash
-# ios-firebase: archive the iOS app in the current git repo on this Mac and
-# upload it to Firebase App Distribution. Signing uses the Apple account and
-# profiles already set up in Xcode on this machine; the upload uses the account
-# from `firebase login`. Only committed code is built.
+# fb-build: archive the iOS app in the current git repo on this Mac and
+# upload it to Firebase App Distribution. The archive is signed the way the
+# project is set up in Xcode; the .ipa is exported like Distribute App → Custom
+# → Release Testing with manual signing, using the release-testing (ad hoc)
+# profiles and Apple Distribution certificate installed on this Mac, so the
+# export does not need an Apple account. The upload uses the account from
+# `firebase login`, and the build goes to every tester group of the Firebase
+# project. Only committed code is built.
 #
-#   ios-firebase [options]          check, build and upload
-#   ios-firebase init [options]     create .ios-firebase.json for this repo
-#   ios-firebase xcodes             list the installed Xcode versions
-#   ios-firebase --version          print the tool version
+#   fb-build [options]          check, build and upload
+#   fb-build init [options]     create .fb-build.json for this repo
+#   fb-build xcodes             list the installed Xcode versions
+#   fb-build --version          print the tool version
 #
-# Team settings live in .ios-firebase.json at the root of the app repo. Build
-# output goes to ~/Library/Developer/ios-firebase/<owner>/<repo>/<timestamp>/.
+# Team settings live in .fb-build.json at the root of the app repo. Build
+# output goes to ~/Library/Developer/fb-build/<owner>/<repo>/<timestamp>/.
 # The build itself runs in a git worktree of HEAD next to it (src/) with its
 # own DerivedData, so Xcode can keep working on the repo in the meantime.
 # Works with the bash 3.2 that ships with macOS.
 set -euo pipefail
 
-# Bump TOOL_VERSION for every release; scripts/build-installer.sh fills in
-# TOOL_COMMIT in the copy it embeds into install-ios-firebase.sh.
+# Bump TOOL_VERSION for every release.
 TOOL_VERSION=1.0
-TOOL_COMMIT=14530d1-dirty
-CONFIG_NAME=.ios-firebase.json
-OUT_ROOT="${IOS_FIREBASE_HOME:-$HOME/Library/Developer/ios-firebase}"
+CONFIG_NAME=.fb-build.json
+OUT_ROOT="${FB_BUILD_HOME:-$HOME/Library/Developer/fb-build}"
 KEEP_RUNS=5
 FIREBASE="${FIREBASE_BIN:-firebase}"
 PLISTBUDDY=/usr/libexec/PlistBuddy
-KNOWN_KEYS="scheme workspace project configuration firebase_plist groups testers export_options_plist xcode"
+KNOWN_KEYS="scheme workspace project configuration firebase_plist export_options_plist xcode"
+# Xcode 16 keeps provisioning profiles in the first, older Xcodes in the second.
+PROFILE_DIRS=("$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles")
 
 if [[ -t 1 ]]; then
   C_RED=$'\033[31m' C_YEL=$'\033[33m' C_GRN=$'\033[32m' C_DIM=$'\033[2m' C_B=$'\033[1m' C_0=$'\033[0m'
@@ -150,31 +152,24 @@ usage() {
   cat <<'EOF'
 Build app iOS trong repo hiện tại và upload lên Firebase App Distribution.
 
-  ios-firebase [tùy chọn]         kiểm tra, build, upload
-  ios-firebase init [tùy chọn]    tạo .ios-firebase.json cho repo
-  ios-firebase xcodes             liệt kê các bản Xcode đã cài
-  ios-firebase --version          in phiên bản của tool
+  fb-build [tùy chọn]         kiểm tra, build, upload
+  fb-build init [tùy chọn]    tạo .fb-build.json cho repo
+  fb-build xcodes             liệt kê các bản Xcode đã cài
+  fb-build --version          in phiên bản của tool
 
 Tùy chọn khi build:
-  -g, --groups a,b        nhóm tester (ghi đè "groups" trong config; "" = không gửi cho ai)
-  -t, --testers a@x,b@y   email tester (ghi đè "testers")
   -m, --message TEXT      ghi chú cho tester trong release notes
-      --notes-file FILE   thêm nội dung FILE vào release notes
-  -c, --configuration X   build configuration (mặc định theo config, hoặc Debug)
-      --scheme X          scheme (ghi đè config)
-      --app-version X     ghi đè MARKETING_VERSION
-      --build N           ghi đè CURRENT_PROJECT_VERSION
-      --pod-install       chạy pod install trước khi build
-      --xcode X           chọn Xcode theo version (16, 16.4) hoặc đường dẫn .app
-                          (ghi đè "xcode" trong config; xem: ios-firebase xcodes)
       --dry-run           chỉ kiểm tra và in release notes dự kiến, không build
-      --no-upload         build và export .ipa, không upload
-      --open              mở release trên Firebase console sau khi upload
-  -v, --verbose           in toàn bộ log xcodebuild
 
 Tùy chọn của init:
-      --scheme X  --plist PATH  --groups a,b  -c X  --xcode X  --force
+      --scheme X          scheme
+      --plist PATH        GoogleService-Info*.plist dùng để upload
+      --xcode X           Xcode dùng để build, theo đúng version (16.4; 27 là 27.0)
+                          hoặc đường dẫn .app (xem: fb-build xcodes).
+                          Mặc định: Xcode đang chọn
+  Build luôn dùng Xcode ghi trong config. Chạy lại init sẽ ghi đè config đã có.
 
+Build được gửi cho tất cả nhóm tester của Firebase project.
 Release notes luôn kèm branch, commit, configuration, version và người build.
 EOF
 }
@@ -182,55 +177,29 @@ EOF
 # ---------------------------------------------------------------------------
 # Arguments
 # ---------------------------------------------------------------------------
-tool_version() {
-  local commit="$TOOL_COMMIT"
-  [[ -n "$commit" ]] || commit="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --short HEAD 2>/dev/null || true)"
-  echo "$TOOL_VERSION${commit:+ ($commit)}"
-}
-
 CMD=run
 case "${1:-}" in
   init) CMD=init; shift ;;
   xcodes) CMD=xcodes; shift ;;
-  -V | --version | version) echo "ios-firebase $(tool_version)"; exit 0 ;;
+  -V | --version | version) echo "fb-build $TOOL_VERSION"; exit 0 ;;
 esac
 
-OPT_GROUPS= OPT_GROUPS_SET=false OPT_TESTERS= OPT_TESTERS_SET=false
-OPT_MESSAGE= OPT_NOTES_FILE= OPT_CONFIGURATION= OPT_SCHEME= OPT_PLIST=
-OPT_VERSION= OPT_BUILD= OPT_XCODE= OPT_POD_INSTALL=false DRY_RUN=false NO_UPLOAD=false
-OPEN_CONSOLE=false VERBOSE=false FORCE=false
+OPT_MESSAGE= OPT_XCODE= DRY_RUN=false
+OPT_SCHEME= OPT_PLIST=
 
 need_arg() { [[ $# -ge 2 ]] || fail "Thiếu giá trị cho $1"; }
+bad_arg() { fail "Tham số không hợp lệ: $1 (xem fb-build --help)"; }
 while (($#)); do
-  case "$1" in
-    -g | --groups) need_arg "$@"; OPT_GROUPS="$2"; OPT_GROUPS_SET=true; shift 2 ;;
-    -t | --testers) need_arg "$@"; OPT_TESTERS="$2"; OPT_TESTERS_SET=true; shift 2 ;;
-    -m | --message) need_arg "$@"; OPT_MESSAGE="$2"; shift 2 ;;
-    --notes-file) need_arg "$@"; OPT_NOTES_FILE="$2"; shift 2 ;;
-    -c | --configuration) need_arg "$@"; OPT_CONFIGURATION="$2"; shift 2 ;;
-    --scheme) need_arg "$@"; OPT_SCHEME="$2"; shift 2 ;;
-    --plist) need_arg "$@"; OPT_PLIST="$2"; shift 2 ;;
-    --app-version) need_arg "$@"; OPT_VERSION="$2"; shift 2 ;;
-    --build) need_arg "$@"; OPT_BUILD="$2"; shift 2 ;;
-    --xcode) need_arg "$@"; OPT_XCODE="$2"; shift 2 ;;
-    -V | --version) echo "ios-firebase $(tool_version)"; exit 0 ;;
-    --pod-install) OPT_POD_INSTALL=true; shift ;;
-    --dry-run) DRY_RUN=true; shift ;;
-    --no-upload) NO_UPLOAD=true; shift ;;
-    --open) OPEN_CONSOLE=true; shift ;;
-    --force) FORCE=true; shift ;;
-    -v | --verbose) VERBOSE=true; shift ;;
-    -h | --help) usage; exit 0 ;;
-    *) fail "Tham số không hợp lệ: $1 (xem ios-firebase --help)" ;;
+  case "$CMD:$1" in
+    *:-V | *:--version) echo "fb-build $TOOL_VERSION"; exit 0 ;;
+    *:-h | *:--help) usage; exit 0 ;;
+    run:-m | run:--message) need_arg "$@"; OPT_MESSAGE="$2"; shift 2 ;;
+    run:--dry-run) DRY_RUN=true; shift ;;
+    init:--scheme) need_arg "$@"; OPT_SCHEME="$2"; shift 2 ;;
+    init:--plist) need_arg "$@"; OPT_PLIST="$2"; shift 2 ;;
+    init:--xcode) need_arg "$@"; OPT_XCODE="$2"; shift 2 ;;
+    *) bad_arg "$1" ;;
   esac
-done
-
-if [[ -n "$OPT_NOTES_FILE" ]]; then
-  [[ -f "$OPT_NOTES_FILE" ]] || fail "Không tìm thấy file release notes: $OPT_NOTES_FILE"
-  OPT_NOTES_FILE="$(cd "$(dirname "$OPT_NOTES_FILE")" && pwd)/$(basename "$OPT_NOTES_FILE")"
-fi
-for v in "$OPT_VERSION" "$OPT_BUILD"; do
-  [[ -z "$v" || "$v" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || fail "'$v' không hợp lệ (dạng 1, 1.2 hoặc 1.2.3)"
 done
 
 # ---------------------------------------------------------------------------
@@ -238,8 +207,6 @@ done
 # ---------------------------------------------------------------------------
 xml_strings() { sed -n 's|^.*<string>\(.*\)</string>.*$|\1|p' | sed 's/&lt;/</g; s/&gt;/>/g; s/&amp;/\&/g'; }
 strip_ansi() { sed -E $'s/\033\\[[0-9;]*[A-Za-z]//g'; }
-# "a, b,,c" -> "a,b,c"
-normalize_list() { tr -d '[:space:]' | tr -s ',' | sed 's/^,//; s/,$//'; }
 plist_get() { "$PLISTBUDDY" -c "Print :$1" "$2" 2>/dev/null; }
 
 goto_repo_root() {
@@ -248,22 +215,12 @@ goto_repo_root() {
   CONFIG="$TOP/$CONFIG_NAME"
 }
 
-# Read a string or a list (JSON array or "a,b") from the config.
-cfg_type() { plutil -type "$1" "$CONFIG" 2>/dev/null; }
+# Read a string from the config.
 cfg_str() {
   local type
-  type="$(cfg_type "$1")" || return 0
+  type="$(plutil -type "$1" "$CONFIG" 2>/dev/null)" || return 0
   [[ "$type" == string ]] || fail "$CONFIG_NAME: \"$1\" phải là chuỗi"
   plutil -extract "$1" raw -o - "$CONFIG"
-}
-cfg_list() {
-  local type
-  type="$(cfg_type "$1")" || return 0
-  case "$type" in
-    string) plutil -extract "$1" raw -o - "$CONFIG" | normalize_list ;;
-    array) plutil -extract "$1" xml1 -o - "$CONFIG" | xml_strings | paste -sd, - | normalize_list ;;
-    *) fail "$CONFIG_NAME: \"$1\" phải là mảng chuỗi" ;;
-  esac
 }
 
 load_config() {
@@ -278,8 +235,6 @@ load_config() {
   CFG_PROJECT="$(cfg_str project)"
   CFG_CONFIGURATION="$(cfg_str configuration)"
   CFG_PLIST="$(cfg_str firebase_plist)"
-  CFG_GROUPS="$(cfg_list groups)"
-  CFG_TESTERS="$(cfg_list testers)"
   CFG_EXPORT_OPTIONS="$(cfg_str export_options_plist)"
   CFG_XCODE="$(cfg_str xcode)"
 }
@@ -299,13 +254,14 @@ list_xcodes() {
 # Xcode that xcodebuild uses without --xcode: DEVELOPER_DIR, then xcode-select.
 default_developer_dir() { echo "${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null)}"; }
 
-# Sets DEVELOPER_DIR from --xcode, or else "xcode" in the config: a version
-# ("16", "16.4") picks the newest installed Xcode with that version, anything
-# else is the path of an Xcode app. With neither, keeps the default Xcode, or
-# the newest one when the default is the Command Line Tools.
+# Sets DEVELOPER_DIR from --xcode of init, or else "xcode" in the config: a
+# version picks the installed Xcode with exactly that version ("27" is 27.0,
+# not the newest 27.x), anything else is the path of an Xcode app. With
+# neither, keeps the default Xcode, or the newest one when the default is the
+# Command Line Tools.
 select_xcode() {
   local want="${OPT_XCODE:-${CFG_XCODE:-}}" source="--xcode" app installed
-  [[ -n "$OPT_XCODE" ]] || source="\"xcode\" trong $CONFIG_NAME"
+  [[ -n "$OPT_XCODE" ]] || source="\"xcode\" trong $CONFIG_NAME; đổi bằng: fb-build init --xcode <version>"
   installed="$(list_xcodes)"
   if [[ -z "$want" ]]; then
     xcodebuild -version >/dev/null 2>&1 && return 0
@@ -313,7 +269,9 @@ select_xcode() {
     [[ -n "$app" ]] || return 0
     warn "Xcode mặc định là $(default_developer_dir), không phải Xcode. Dùng bản mới nhất: $app"
   elif [[ "$want" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-    app="$(awk -F'\t' -v w="$want" '$1 == w || index($1, w ".") == 1 { print $2; exit }' <<< "$installed")"
+    app="$(awk -F'\t' -v w="$(trim_version "$want")" '
+      { v = $1; while (v ~ /\.0$/) v = substr(v, 1, length(v) - 2) }
+      v == w { print $2; exit }' <<< "$installed")"
     if [[ -z "$app" ]]; then
       bad "Không có Xcode $want ($source). Các bản đã cài: $(cut -f1 <<< "$installed" | paste -sd, - | sed 's/,/, /g')"
       return 1
@@ -328,12 +286,18 @@ select_xcode() {
   export DEVELOPER_DIR="$app/Contents/Developer"
 }
 
+# "27.0.0" -> "27", "16.4.0" -> "16.4": equal versions compare equal.
+trim_version() { sed -E 's/(\.0)+$//' <<< "$1"; }
+
+# "16.4" from XCODE_VERSION ("Xcode 16.4").
+xcode_version() { sed -n 's/^Xcode \([0-9.]*\).*/\1/p' <<< "$XCODE_VERSION"; }
+
 check_xcode() {
   if XCODE_VERSION="$(xcodebuild -version 2>/dev/null | sed -n 1p)" && [[ -n "$XCODE_VERSION" ]]; then
     ok "$XCODE_VERSION ($(default_developer_dir | sed 's|/Contents/Developer$||'))"
     return 0
   fi
-  bad "xcodebuild không chạy được (Xcode mặc định: $(default_developer_dir)). Cài Xcode, hoặc chọn bản khác bằng --xcode (xem: ios-firebase xcodes)"
+  bad "xcodebuild không chạy được (Xcode mặc định: $(default_developer_dir)). Cài Xcode, hoặc chọn bản khác bằng: fb-build init --xcode <version> (xem: fb-build xcodes)"
   return 1
 }
 
@@ -372,7 +336,7 @@ detect_container() {
 # Prints the schemes of CONTAINER, without Pods schemes.
 list_schemes() {
   local json
-  json="$(mktemp -t ios-firebase-list)"
+  json="$(mktemp -t fb-build-list)"
   xcodebuild -list -json "${CONTAINER[@]}" > "$json" 2>/dev/null || true
   { plutil -extract workspace.schemes xml1 -o - "$json" 2>/dev/null \
       || plutil -extract project.schemes xml1 -o - "$json" 2>/dev/null; } \
@@ -426,7 +390,7 @@ repo_key() {
 
 # Runs a firebase command with --json; sets FB_RESULT (file) and FB_ERROR.
 firebase_json() {
-  FB_RESULT="$(mktemp -t ios-firebase-fb)"
+  FB_RESULT="$(mktemp -t fb-build-fb)"
   FB_ERROR=
   if "$FIREBASE" "$@" --json --non-interactive > "$FB_RESULT" 2>/dev/null \
     && [[ "$(plutil -extract status raw -o - "$FB_RESULT" 2>/dev/null)" == success ]]; then
@@ -437,15 +401,136 @@ firebase_json() {
 }
 
 # ---------------------------------------------------------------------------
+# Signing for export: release-testing (ad hoc) profiles installed on this Mac
+# ---------------------------------------------------------------------------
+# Valid code signing identities in the keychain as "<SHA-1><TAB><name>".
+signing_identities() {
+  security find-identity -v -p codesigning 2>/dev/null \
+    | awk 'length($2) == 40 { sha = $2; sub(/^[^"]*"/, ""); sub(/"[^"]*$/, ""); print sha "\t" $0 }'
+}
+
+# Release-testing profiles that have not expired and include a certificate
+# whose private key is in the keychain, newest first, one per line:
+# <team> <TAB> <bundle id or wildcard> <TAB> <created> <TAB> <uuid> <TAB> <name> <TAB> <SHA-1,...>
+# Development profiles allow get-task-allow; enterprise ones list no devices.
+list_release_profiles() {
+  local identities now dir f tmp i cert certs appid
+  identities="$(signing_identities | cut -f1)"
+  [[ -n "$identities" ]] || return 0
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  tmp="$(mktemp -t fb-build-profile)"
+  for dir in "${PROFILE_DIRS[@]}"; do
+    for f in "$dir"/*.mobileprovision; do
+      [[ -f "$f" ]] && security cms -D -i "$f" > "$tmp" 2>/dev/null || continue
+      [[ "$(plutil -type ProvisionedDevices "$tmp" 2>/dev/null)" == array ]] || continue
+      [[ "$(plutil -extract Entitlements.get-task-allow raw -o - "$tmp" 2>/dev/null)" != true ]] || continue
+      [[ "$(plutil -extract ExpirationDate raw -o - "$tmp" 2>/dev/null)" > "$now" ]] || continue
+      certs= i=0
+      while cert="$(plutil -extract "DeveloperCertificates.$i" raw -o - "$tmp" 2>/dev/null)"; do
+        cert="$(base64 -D <<< "$cert" | shasum -a 1 | cut -d' ' -f1 | tr a-f A-F)"
+        ! grep -qxF "$cert" <<< "$identities" || certs="${certs:+$certs,}$cert"
+        i=$((i + 1))
+      done
+      [[ -n "$certs" ]] || continue
+      appid="$(plutil -extract Entitlements.application-identifier raw -o - "$tmp" 2>/dev/null)" || continue
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$(plutil -extract TeamIdentifier.0 raw -o - "$tmp" 2>/dev/null)" "${appid#*.}" \
+        "$(plutil -extract CreationDate raw -o - "$tmp" 2>/dev/null)" \
+        "$(plutil -extract UUID raw -o - "$tmp" 2>/dev/null)" \
+        "$(plutil -extract Name raw -o - "$tmp" 2>/dev/null)" "$certs"
+    done
+  done | sort -t$'\t' -k3,3r | awk -F'\t' '!seen[$4]++'
+  rm -f "$tmp"
+}
+
+# The profile line from PROFILES to use for bundle id $1, limited to team $2
+# and certificate $3 when given: an explicit App ID before a wildcard one,
+# then the newest.
+pick_profile() {
+  awk -F'\t' -v b="$1" -v t="$2" -v c="$3" '
+    (t == "" || $1 == t) && (c == "" || index("," $6 ",", "," c ",")) {
+      if ($2 == b) { print; found = 1; exit }
+      p = substr($2, 1, length($2) - 1)
+      if (wild == "" && substr($2, length($2)) == "*" && substr(b, 1, length(p)) == p) wild = $0
+    }
+    END { if (!found && wild != "") print wild }' <<< "$PROFILES"
+}
+
+profile_hint() {
+  echo "Tạo profile Ad Hoc cho $1 tại developer.apple.com → Profiles (gồm certificate Apple Distribution có trong keychain máy này), tải về rồi mở file .mobileprovision để cài"
+}
+
+check_signing() {
+  if [[ -n "$CFG_EXPORT_OPTIONS" ]]; then
+    if [[ -f "$CFG_EXPORT_OPTIONS" ]]; then
+      ok "Export: theo $CFG_EXPORT_OPTIONS"
+    else
+      bad "Không tìm thấy $CFG_EXPORT_OPTIONS (\"export_options_plist\" trong $CONFIG_NAME)"
+    fi
+    return
+  fi
+  PROFILES="$(list_release_profiles)"
+  if [[ -z "$PROFILES" ]]; then
+    bad "Không có provisioning profile release testing (ad hoc) nào còn hạn kèm certificate Apple Distribution trong keychain. $(profile_hint "app")"
+    return
+  fi
+  # The app's own bundle ids are known only after the archive; the Firebase
+  # plist names the main one, which catches the usual missing profile early.
+  [[ -n "$PLIST_BUNDLE_ID" ]] || return 0
+  local line
+  line="$(pick_profile "$PLIST_BUNDLE_ID" "" "")"
+  if [[ -z "$line" ]]; then
+    bad "Không có profile release testing cho $PLIST_BUNDLE_ID (BUNDLE_ID trong $SRC_PLIST). $(profile_hint "$PLIST_BUNDLE_ID")"
+  else
+    ok "Profile: $(cut -f5 <<< "$line") ($(cut -f1 <<< "$line"))"
+  fi
+}
+
+# Picks one certificate and, for each bundle id in $1 (one per line), a profile
+# that includes it. Sets SIGN_TEAM, SIGN_CERT and SIGN_PROFILES
+# ("<bundle id><TAB><uuid><TAB><name>" per line).
+select_signing() {
+  local bundles="$1" team="$2" cert b line missing=
+  for cert in $(cut -f6 <<< "$PROFILES" | tr ',' '\n' | awk '!seen[$0]++'); do
+    SIGN_PROFILES=
+    while IFS= read -r b; do
+      line="$(pick_profile "$b" "$team" "$cert")"
+      [[ -n "$line" ]] || continue 2
+      SIGN_TEAM="$(cut -f1 <<< "$line")"
+      SIGN_PROFILES="${SIGN_PROFILES:+$SIGN_PROFILES$'\n'}$b"$'\t'"$(cut -f4,5 <<< "$line")"
+    done <<< "$bundles"
+    SIGN_CERT="$cert"
+    return 0
+  done
+  while IFS= read -r b; do
+    [[ -n "$(pick_profile "$b" "$team" "")" ]] || missing="${missing:+$missing, }$b"
+  done <<< "$bundles"
+  if [[ -n "$missing" ]]; then
+    hint "Không có profile release testing${team:+ của team $team} cho: $missing. $(profile_hint "$missing")"
+  else
+    hint "Các profile release testing của $(paste -sd, - <<< "$bundles" | sed 's/,/, /g') không dùng chung một certificate Apple Distribution có trong keychain. Tạo lại profile với cùng certificate."
+  fi
+  fail "Không chọn được provisioning profile để export"
+}
+
+# Bundle ids of the app and of every app and extension inside it (watch app,
+# app extensions, App Clip): each is signed with its own profile.
+archive_bundle_ids() {
+  local b
+  find "$1" \( -name "*.app" -o -name "*.appex" \) -not -path "*/Frameworks/*" | while IFS= read -r b; do
+    plist_get CFBundleIdentifier "$b/Info.plist" || true
+  done | awk 'NF && !seen[$0]++'
+}
+
+# ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
 cmd_init() {
   goto_repo_root
-  if [[ -e "$CONFIG" && "$FORCE" != true ]]; then
-    fail "Đã có $CONFIG_NAME. Thêm --force để tạo lại."
-  fi
+  local again=
+  [[ ! -e "$CONFIG" ]] || again=" lại"
   CFG_WORKSPACE= CFG_PROJECT=
-  step "Tạo $CONFIG_NAME cho $(basename "$TOP")"
+  step "Tạo$again $CONFIG_NAME cho $(basename "$TOP")"
   CFG_XCODE=
   select_xcode && check_xcode || fail "Cần Xcode để đọc danh sách scheme."
   detect_container || fail "Repo cần có đúng một .xcworkspace, hoặc đúng một .xcodeproj nếu không có workspace."
@@ -492,21 +577,8 @@ cmd_init() {
     warn "$plist không có trong git. Các dev khác cần đặt file này đúng đường dẫn trên máy họ."
   fi
 
-  local groups="$OPT_GROUPS"
-  if [[ "$OPT_GROUPS_SET" != true && -t 0 ]]; then
-    if [[ -n "$project_id" ]] && command -v "$FIREBASE" >/dev/null 2>&1 \
-      && firebase_json appdistribution:groups:list --project "$project_id"; then
-      local available
-      available="$(plutil -extract result.groups xml1 -o - "$FB_RESULT" 2>/dev/null | xml_strings \
-        | sed -n 's|^projects/[^/]*/groups/||p' | paste -sd, - || true)"
-      echo "  Nhóm trên Firebase: ${available:-(chưa có)}"
-    fi
-    read -r -p "  Nhóm tester mặc định (cách nhau bằng dấu phẩy, để trống nếu chưa có): " groups
-  fi
-  groups="$(normalize_list <<< "$groups")"
-
-  local configuration="${OPT_CONFIGURATION:-Debug}" tmp
-  tmp="$(mktemp -t ios-firebase-init)"
+  local tmp
+  tmp="$(mktemp -t fb-build-init)"
   plutil -create xml1 "$tmp"
   if [[ -n "$WORKSPACE" ]]; then
     plutil -insert workspace -string "$WORKSPACE" "$tmp"
@@ -514,34 +586,27 @@ cmd_init() {
     plutil -insert project -string "$PROJECT" "$tmp"
   fi
   plutil -insert scheme -string "$scheme" "$tmp"
-  plutil -insert configuration -string "$configuration" "$tmp"
-  # A version is the same on every machine; a path may not be.
-  if [[ "$OPT_XCODE" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
-    plutil -insert xcode -string "$OPT_XCODE" "$tmp"
-  fi
+  plutil -insert configuration -string Debug "$tmp"
+  # Builds use the Xcode init used, recorded as a version: it is the same on
+  # every machine, a path may not be.
+  [[ -z "$(xcode_version)" ]] || plutil -insert xcode -string "$(xcode_version)" "$tmp"
   plutil -insert firebase_plist -string "$plist" "$tmp"
-  plutil -insert groups -array "$tmp"
-  local g
-  for g in ${groups//,/ }; do
-    plutil -insert groups -string "$g" -append "$tmp"
-  done
   # plutil escapes "/" as "\/"; both are valid JSON, the plain form reads better.
   plutil -convert json -r -o - "$tmp" | sed 's|\\/|/|g' > "$CONFIG"
   rm -f "$tmp"
 
-  step "Đã tạo $CONFIG_NAME"
+  step "Đã tạo$again $CONFIG_NAME"
   cat "$CONFIG"
   echo
-  [[ -n "$groups" ]] || warn "Chưa có nhóm tester: build sẽ chỉ được upload, không gửi cho ai. Sửa \"groups\" khi cần."
   echo "Commit file này để cả team dùng chung:"
-  echo "  git add $CONFIG_NAME && git commit -m \"Add ios-firebase config\""
+  echo "  git add $CONFIG_NAME && git commit -m \"Add fb-build config\""
 }
 
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
 preflight() {
-  step "Kiểm tra (ios-firebase $(tool_version))"
+  step "Kiểm tra (fb-build $TOOL_VERSION)"
 
   # Git: only committed code is built, so the build matches HEAD exactly.
   HEAD_SHA="$(git rev-parse --verify --quiet HEAD)" || fail "Repo chưa có commit nào"
@@ -565,21 +630,18 @@ preflight() {
 
   # Config
   if [[ ! -f "$CONFIG" ]]; then
-    bad "Chưa có $CONFIG_NAME. Chạy: ios-firebase init"
+    bad "Chưa có $CONFIG_NAME. Chạy: fb-build init"
     return
   fi
   load_config
   ok "Cấu hình: $CONFIG_NAME"
-  CONFIGURATION="${OPT_CONFIGURATION:-${CFG_CONFIGURATION:-Debug}}"
-  TESTER_GROUPS="$CFG_GROUPS" TESTERS="$CFG_TESTERS"
-  [[ "$OPT_GROUPS_SET" != true ]] || TESTER_GROUPS="$(normalize_list <<< "$OPT_GROUPS")"
-  [[ "$OPT_TESTERS_SET" != true ]] || TESTERS="$(normalize_list <<< "$OPT_TESTERS")"
+  CONFIGURATION="${CFG_CONFIGURATION:-Debug}"
 
   # Xcode, workspace and scheme
   local have_xcode=false have_container=false
   select_xcode && check_xcode && have_xcode=true
   detect_container && have_container=true
-  SCHEME="${OPT_SCHEME:-$CFG_SCHEME}"
+  SCHEME="$CFG_SCHEME"
   if [[ -z "$SCHEME" ]] && $have_xcode && $have_container; then
     if ! SCHEME="$(guess_scheme 2>/dev/null)"; then
       SCHEME=
@@ -592,22 +654,20 @@ preflight() {
 
   # CocoaPods: the Pods sandbox must match Podfile.lock, otherwise the build
   # fails minutes later in the "[CP] Check Pods Manifest.lock" phase.
-  PODS_DIR=
+  local pods_dir
   if $have_container; then
-    PODS_DIR="$(dirname "${WORKSPACE:-$PROJECT}")"
-    if [[ -f "$PODS_DIR/Podfile" ]]; then
-      if [[ "$OPT_POD_INSTALL" == true ]]; then
-        ok "CocoaPods: sẽ chạy pod install"
-      elif diff -q "$PODS_DIR/Podfile.lock" "$PODS_DIR/Pods/Manifest.lock" >/dev/null 2>&1; then
+    pods_dir="$(dirname "${WORKSPACE:-$PROJECT}")"
+    if [[ -f "$pods_dir/Podfile" ]]; then
+      if diff -q "$pods_dir/Podfile.lock" "$pods_dir/Pods/Manifest.lock" >/dev/null 2>&1; then
         ok "CocoaPods: Pods đã đồng bộ với Podfile.lock"
       else
-        bad "Pods chưa đồng bộ với Podfile.lock. Chạy pod install, hoặc thêm --pod-install"
+        bad "Pods chưa đồng bộ với Podfile.lock. Chạy pod install trong repo"
       fi
     fi
   fi
 
   # Firebase config that the build should contain
-  local plist="${OPT_PLIST:-${CFG_PLIST:-GoogleService-Info-Dev.plist}}" matches
+  local plist="${CFG_PLIST:-GoogleService-Info-Dev.plist}" matches
   plist="${plist#./}"
   if [[ "$plist" != */* ]]; then
     matches="$(find_firebase_plists | grep -E "(^|/)${plist//./\\.}$" || true)"
@@ -618,7 +678,7 @@ preflight() {
       plist=
     fi
   fi
-  SRC_PLIST=
+  SRC_PLIST= PLIST_BUNDLE_ID=
   if [[ -n "$plist" && ! -f "$plist" ]]; then
     bad "Không tìm thấy $plist (\"firebase_plist\" trong $CONFIG_NAME)"
   elif [[ -n "$plist" ]]; then
@@ -635,15 +695,15 @@ preflight() {
     fi
   fi
 
+  PROFILES=
+  check_signing
+
   # Firebase CLI, login and tester groups
+  TESTER_GROUPS=
   if ! command -v "$FIREBASE" >/dev/null 2>&1; then
     bad "Chưa cài Firebase CLI. Cài bằng: brew install firebase-cli (hoặc npm install -g firebase-tools), rồi chạy: firebase login"
-  elif [[ -n "$SRC_PLIST" && "$NO_UPLOAD" != true ]]; then
+  elif [[ -n "$SRC_PLIST" ]]; then
     check_firebase_access
-  fi
-
-  if [[ "$NO_UPLOAD" != true && -z "$TESTER_GROUPS$TESTERS" ]]; then
-    warn "Không có nhóm tester hay email nào: build chỉ được upload, không gửi cho ai"
   fi
 }
 
@@ -663,24 +723,15 @@ check_firebase_access() {
     fi
     return
   fi
-  local available g missing=
-  available="$(plutil -extract result.groups xml1 -o - "$FB_RESULT" 2>/dev/null | xml_strings \
-    | sed -n 's|^projects/[^/]*/groups/||p' || true)"
-  for g in ${TESTER_GROUPS//,/ }; do
-    grep -qxF "$g" <<< "$available" || missing="$missing $g"
-  done
-  if [[ -n "$missing" ]]; then
-    bad "Nhóm không có trên Firebase project $PROJECT_ID:$missing. Các nhóm hiện có: $(paste -sd, - <<< "$available" | sed 's/,/, /g')"
-  else
-    ok "Firebase CLI: $account | gửi cho: $(recipients)"
-  fi
+  # The build goes to every tester group of the project.
+  TESTER_GROUPS="$(plutil -extract result.groups xml1 -o - "$FB_RESULT" 2>/dev/null | xml_strings \
+    | sed -n 's|^projects/[^/]*/groups/||p' | paste -sd, - || true)"
+  ok "Firebase CLI: $account | gửi cho: $(recipients)"
+  [[ -n "$TESTER_GROUPS" ]] || warn "Project $PROJECT_ID chưa có nhóm tester nào: build chỉ được upload, không gửi cho ai"
 }
 
 recipients() {
-  local out=
-  [[ -z "$TESTER_GROUPS" ]] || out="nhóm ${TESTER_GROUPS//,/, }"
-  [[ -z "$TESTERS" ]] || out="${out:+$out; }${TESTERS//,/, }"
-  echo "${out:-không ai (chỉ upload)}"
+  if [[ -n "$TESTER_GROUPS" ]]; then echo "nhóm ${TESTER_GROUPS//,/, }"; else echo "không ai (chỉ upload)"; fi
 }
 
 # ---------------------------------------------------------------------------
@@ -691,10 +742,6 @@ write_release_notes() {
   {
     if [[ -n "$OPT_MESSAGE" ]]; then
       printf '%s\n\n' "$OPT_MESSAGE"
-    fi
-    if [[ -n "$OPT_NOTES_FILE" ]]; then
-      cat "$OPT_NOTES_FILE"
-      printf '\n\n'
     fi
     echo "---"
     echo "$SCHEME $version · $CONFIGURATION"
@@ -717,11 +764,11 @@ explain_xcode_failure() {
   elif grep -qE "errSecInternalComponent|User interaction is not allowed|unable to unlock keychain" "$log"; then
     hint "Login keychain đang khóa (hay gặp khi chạy qua SSH). Chạy trong Terminal của phiên đăng nhập, hoặc: security unlock-keychain ~/Library/Keychains/login.keychain-db"
   elif grep -qE "sandbox is not in sync with the Podfile.lock" "$log"; then
-    hint "Pods chưa đồng bộ với Podfile.lock. Chạy pod install, hoặc thêm --pod-install."
+    hint "Pods chưa đồng bộ với Podfile.lock. Chạy pod install trong repo."
   elif grep -qE "does not contain a scheme named|is not currently configured for the" "$log"; then
     hint "Scheme hoặc configuration không tồn tại. Kiểm tra \"scheme\" và \"configuration\" trong $CONFIG_NAME."
   elif grep -qE "No profiles? for|couldn.t find any provisioning profiles|requires a provisioning profile|doesn.t match the entitlements|conflicting provisioning settings|doesn.t include the currently selected device" "$log"; then
-    hint "Lỗi provisioning profile. Thử Distribute App → Release Testing trong Xcode Organizer với cùng archive để xem chi tiết. Nếu project dùng manual signing, khai báo \"export_options_plist\" trong $CONFIG_NAME."
+    hint "Lỗi provisioning profile. Thử Distribute App → Custom → Release Testing (ký thủ công) trong Xcode Organizer với cùng archive để xem chi tiết. Cần cài profile Ad Hoc cho app và từng extension, cùng certificate Apple Distribution. Hoặc khai báo \"export_options_plist\" trong $CONFIG_NAME."
   fi
   hint "Log đầy đủ: $log"
 }
@@ -732,9 +779,7 @@ run_xcodebuild() {
   echo "${C_DIM}  xcodebuild $*${C_0}"
   echo "${C_DIM}  log: $log${C_0}"
   set +e
-  if [[ "$VERBOSE" == true ]]; then
-    xcodebuild "$@" 2>&1 | tee "$log"
-  elif command -v xcbeautify >/dev/null 2>&1; then
+  if command -v xcbeautify >/dev/null 2>&1; then
     xcodebuild "$@" 2>&1 | tee "$log" | xcbeautify --quiet
   else
     xcodebuild "$@" 2>&1 | tee "$log" | grep --line-buffered -E ': error: |^error: |\*\* [A-Z ]+ (SUCCEEDED|FAILED) \*\*'
@@ -750,33 +795,14 @@ run_xcodebuild() {
 # release-testing replaced ad-hoc in Xcode 15.3.
 export_method() {
   local v major minor
-  v="$(sed -n 's/^Xcode \([0-9.]*\).*/\1/p' <<< "$XCODE_VERSION")"
+  v="$(xcode_version)"
   major="${v%%.*}"
   minor="$(cut -d. -f2 <<< "$v.0")"
   if (( major < 15 || (major == 15 && minor < 3) )); then echo ad-hoc; else echo release-testing; fi
 }
 
-stage_pods() {
-  [[ "$OPT_POD_INSTALL" == true && -f "$PODS_DIR/Podfile" ]] || return 0
-  step "pod install"
-  if [[ -f "$PODS_DIR/Gemfile" ]]; then
-    (cd "$PODS_DIR" && bundle install --quiet && bundle exec pod install)
-  else
-    (cd "$PODS_DIR" && pod install)
-  fi
-  local dirty
-  dirty="$(git status --porcelain)"
-  if [[ -n "$dirty" ]]; then
-    echo "$dirty" | sed 's/^/  /'
-    fail "pod install đã thay đổi file trong git, nên build sẽ không khớp commit $SHORT_SHA. Chạy pod install trong repo, commit các thay đổi rồi chạy lại."
-  fi
-}
-
 stage_archive() {
   step "Archive $SCHEME ($CONFIGURATION)"
-  local -a settings=()
-  [[ -z "$OPT_VERSION" ]] || settings+=("MARKETING_VERSION=$OPT_VERSION")
-  [[ -z "$OPT_BUILD" ]] || settings+=("CURRENT_PROJECT_VERSION=$OPT_BUILD")
   run_xcodebuild "$LOG_DIR/archive.log" \
     "${CONTAINER[@]}" \
     -scheme "$SCHEME" \
@@ -785,14 +811,10 @@ stage_archive() {
     -archivePath "$ARCHIVE_PATH" \
     -derivedDataPath "$DERIVED_DATA" \
     -allowProvisioningUpdates \
-    ${settings[@]+"${settings[@]}"} \
     archive
 
   APP_VERSION="$(plist_get ApplicationProperties:CFBundleShortVersionString "$ARCHIVE_PATH/Info.plist" || echo "?")"
   APP_BUILD="$(plist_get ApplicationProperties:CFBundleVersion "$ARCHIVE_PATH/Info.plist" || echo "?")"
-  if [[ -n "$OPT_VERSION" && "$APP_VERSION" != "$OPT_VERSION" ]] || [[ -n "$OPT_BUILD" && "$APP_BUILD" != "$OPT_BUILD" ]]; then
-    fail "Archive có version $APP_VERSION ($APP_BUILD), không khớp --app-version/--build. Info.plist phải dùng \$(MARKETING_VERSION) và \$(CURRENT_PROJECT_VERSION)."
-  fi
   ok "Archive: $APP_VERSION ($APP_BUILD)"
 
   verify_firebase_config
@@ -821,22 +843,38 @@ verify_firebase_config() {
 
 stage_export() {
   step "Export .ipa"
-  local options="$RUN_DIR/ExportOptions.plist"
+  local options="$RUN_DIR/ExportOptions.plist" bundle uuid name
+  local -a updates=()
   if [[ -n "$CFG_EXPORT_OPTIONS" ]]; then
     [[ -f "$CFG_EXPORT_OPTIONS" ]] || fail "Không tìm thấy $CFG_EXPORT_OPTIONS (\"export_options_plist\" trong $CONFIG_NAME)"
     cp "$CFG_EXPORT_OPTIONS" "$options"
+    # The team's own options may use automatic signing.
+    updates=(-allowProvisioningUpdates)
   else
+    # Distribute App → Custom → Release Testing, signed manually with the
+    # profiles installed on this Mac.
+    select_signing "$(archive_bundle_ids "$ARCHIVE_PATH/Products/Applications")" \
+      "$(plist_get ApplicationProperties:Team "$ARCHIVE_PATH/Info.plist" || true)"
     plutil -create xml1 "$options"
     plutil -insert method -string "$(export_method)" "$options"
     plutil -insert destination -string export "$options"
-    plutil -insert signingStyle -string automatic "$options"
+    plutil -insert signingStyle -string manual "$options"
+    plutil -insert teamID -string "$SIGN_TEAM" "$options"
+    plutil -insert signingCertificate -string "$SIGN_CERT" "$options"
+    # PlistBuddy, since plutil key paths split the bundle ids at their dots.
+    "$PLISTBUDDY" -c "Add :provisioningProfiles dict" "$options" >/dev/null
+    while IFS=$'\t' read -r bundle uuid name; do
+      "$PLISTBUDDY" -c "Add :provisioningProfiles:$bundle string $uuid" "$options" >/dev/null
+      ok "$bundle → $name"
+    done <<< "$SIGN_PROFILES"
+    ok "Certificate: $(signing_identities | awk -F'\t' -v c="$SIGN_CERT" '$1 == c { print $2 }')"
   fi
   run_xcodebuild "$LOG_DIR/export.log" \
     -exportArchive \
     -archivePath "$ARCHIVE_PATH" \
     -exportPath "$EXPORT_PATH" \
     -exportOptionsPlist "$options" \
-    -allowProvisioningUpdates
+    ${updates[@]+"${updates[@]}"}
   IPA="$(find "$EXPORT_PATH" -maxdepth 1 -name "*.ipa" | sed -n 1p)"
   [[ -n "$IPA" ]] || fail "Export xong nhưng không thấy file .ipa trong $EXPORT_PATH"
   ok "$IPA ($(du -h "$IPA" | cut -f1 | tr -d ' '))"
@@ -846,7 +884,6 @@ stage_upload() {
   step "Upload Firebase App Distribution"
   local -a args=(appdistribution:distribute "$IPA" --app "$APP_ID" --release-notes-file "$NOTES" --non-interactive)
   [[ -z "$TESTER_GROUPS" ]] || args+=(--groups "$TESTER_GROUPS")
-  [[ -z "$TESTERS" ]] || args+=(--testers "$TESTERS")
   local log="$LOG_DIR/upload.log" status
   set +e
   "$FIREBASE" "${args[@]}" 2>&1 | tee "$log"
@@ -956,7 +993,7 @@ cmd_run() {
   if [[ "$DRY_RUN" == true ]]; then
     step "Release notes dự kiến"
     local preview
-    preview="$(mktemp -t ios-firebase-notes)"
+    preview="$(mktemp -t fb-build-notes)"
     write_release_notes "$preview" "<version> (<build>)"
     cat "$preview"
     rm -f "$preview"
@@ -979,16 +1016,9 @@ cmd_run() {
   caffeinate -i -w $$ &
 
   stage_checkout
-  stage_pods
   stage_archive
   stage_export
   write_release_notes "$NOTES" "$APP_VERSION ($APP_BUILD)"
-  if [[ "$NO_UPLOAD" == true ]]; then
-    step "Xong (không upload)"
-    echo "  IPA: $IPA"
-    echo "  Release notes: $NOTES"
-    return
-  fi
   stage_upload
 
   step "Đã upload $SCHEME $APP_VERSION ($APP_BUILD) · $CONFIGURATION lên Firebase"
@@ -997,9 +1027,6 @@ cmd_run() {
   [[ -z "$TESTING_URI" ]] || echo "  Tester:   $TESTING_URI"
   [[ -z "$CONSOLE_URI" ]] || echo "  Console:  $CONSOLE_URI"
   echo "  IPA:      $IPA"
-  if [[ "$OPEN_CONSOLE" == true && -n "$CONSOLE_URI" ]]; then
-    open "$CONSOLE_URI"
-  fi
 }
 
 cmd_xcodes() {
@@ -1016,7 +1043,7 @@ cmd_xcodes() {
     fi
   done <<< "$installed"
   echo
-  echo "Chọn bản khác: --xcode <version>, hoặc \"xcode\": \"<version>\" trong $CONFIG_NAME."
+  echo "Chọn bản để build: fb-build init --xcode <version>"
 }
 
 case "$CMD" in
